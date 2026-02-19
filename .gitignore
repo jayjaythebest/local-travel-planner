@@ -1,0 +1,22 @@
+# === Streamlit 隱私資訊 (最重要！) ===
+.streamlit/secrets.toml
+.streamlit/
+# === Google 憑證檔案 ===
+# 雖然你已經改用 secrets，但為了防止手殘，把原本的 JSON 檔也排除
+creds.json
+*.json
+
+# === Python 環境與快取 ===
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.env
+
+# === 作業系統暫存檔 ===
+.DS_Store
+Thumbs.db
+
+# === 其他敏感資訊 ===
+.env
