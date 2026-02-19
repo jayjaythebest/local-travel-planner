@@ -1,6 +1,0 @@
-streamlit
-gspread
-pandas
-oauth2client
-google-generativeai
-requests
