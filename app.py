@@ -4,6 +4,8 @@ import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
 import google.generativeai as genai
 import json
+from PIL import Image
+import requests
 
 # --- 1. 初始化 Google Sheets ---
 def init_gspread():
@@ -30,9 +32,18 @@ def get_ai_advice(spot_name, country):
         return f"暫時無法獲取建議：{e}"
 
 
-import requests
+# 幣值映射表
+CURRENCY_MAP = {"日本 (Japan)": "JPY", "美國 (USA)": "USD", "韓國 (South Korea)": "KRW", "台灣 (Taiwan)": "TWD", "泰國 (Thailand)": "THB"}
 
-@st.cache_data(ttl=3600)
+# AI 辨識收據功能
+def analyze_receipt(image_file):
+    if image_file:
+        model = genai.GenerativeModel('gemini-1.5-flash') # 使用 flash 處理圖片速度快且便宜
+        img = Image.open(image_file)
+        prompt = "請分析這張收據，並以 JSON 格式回傳：{'item': '項目名稱', 'amount': 數字金額, 'category': '交通/住宿/飲食/購物/其他'}"
+        response = model.generate_content([prompt, img])
+        # ... 解析 JSON 邏輯 (同先前解析航班) ...
+
 def get_travel_time(origin, destination, country):
     GOOGLE_MAPS_API_KEY = st.secrets["GOOGLE_MAPS_API_KEY"]
     
@@ -78,6 +89,9 @@ except:
     index_ws = spreadsheet.add_worksheet(title="Index", rows="100", cols=len(headers))
     index_ws.append_row(headers)
 
+# @st.cache_data(ttl=3600)
+
+
 # 國家建議清單
 country_list = ["日本 (Japan)", "美國 (USA)", "韓國 (South Korea)", "台灣 (Taiwan)", "泰國 (Thailand)"]
 
@@ -87,23 +101,46 @@ st.set_page_config(page_title="Jay Travel Planner", layout="wide")
 # --- 插入自定義 CSS ---
 st.markdown("""
 <style>
-    /* 讓時間欄位看起來更緊湊 */
-    [data-testid="column"] {
-        display: flex;
-        flex-direction: column;
-        justify-content: flex-start;
+    /* 整體背景與字體 */
+    .stApp {
+        background-color: #F8F9FA;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
-    /* 活動卡片的標題顏色 */
-    h4 {
-        color: #1E88E5;
-        margin-top: 0px !important;
+    /* 卡片樣式：優雅圓角與陰影 */
+    div[data-testid="stVerticalBlock"] > div[style*="border"] {
+        background-color: white;
+        border: none !important;
+        border-radius: 20px !important;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+        padding: 25px !important;
+        margin-bottom: 20px;
     }
 
-    /* 交通資訊的樣式 */
-    small {
-        color: #757575;
-        font-style: italic;
+    /* 按鈕樣式：參考截圖的灰藍色調 */
+    .stButton>button {
+        border-radius: 12px;
+        border: none;
+        background-color: #9BA9B9; /* 截圖中的灰藍色 */
+        color: white;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    .stButton>button:hover {
+        background-color: #7E8E9F;
+        transform: translateY(-1px);
+    }
+
+    /* 頂部 Tab 樣式簡約化 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+        background-color: transparent;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 40px;
+        border-radius: 10px;
+        background-color: #EEE;
+        border: none;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -177,19 +214,168 @@ if selected_trip:
     duration = (end_date - start_date).days + 1
     date_range = [(start_date + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(duration)]
     
+    @st.dialog("⚙️ 編輯旅程基本資訊")
+    def edit_meta_data():
+        # 初始化 session_state 用於暫存編輯中的資料
+        if "temp_meta" not in st.session_state:
+            # 預設抓取目前 Index 表的值 (對應 basic_data 索引)
+            st.session_state.temp_meta = {
+                "航班號": basic_data[4], "出發機場": basic_data[5], "出發時間": basic_data[6],
+                "抵達機場": basic_data[7], "抵達時間": basic_data[8],
+                "酒店名稱": basic_data[9], "酒店地址": basic_data[10],
+                "入住日期": basic_data[11], "退房日期": basic_data[12]
+            }
+
+        # 第一區：AI 輔助輸入
+        st.subheader("🤖 AI 自動填表")
+        raw_input = st.text_area("貼上航班或酒店確認信內容...", height=100)
+        if st.button("🪄 讓 AI 解析並填入下方"):
+            if raw_input:
+                with st.spinner("AI 正在解析中..."):
+                    parsed_data = get_travel_meta_json(raw_input, basic_data[1])
+                    if parsed_data:
+                        # 將解析結果覆蓋到暫存區
+                        st.session_state.temp_meta.update(parsed_data)
+                        st.success("解析成功！請檢查下方表格。")
+            else:
+                st.warning("請先輸入文字")
+
+        st.divider()
+
+        # 第二區：用戶手動校對與編輯
+        st.subheader("📝 核對詳細資訊")
+        col1, col2 = st.columns(2)
+        with col1:
+            f_no = st.text_input("航班號", value=st.session_state.temp_meta["航班號"])
+            f_dep = st.text_input("出發機場", value=st.session_state.temp_meta["出發機場"])
+            f_dep_t = st.text_input("出發時間 (HH:MM)", value=st.session_state.temp_meta["出發時間"])
+            h_name = st.text_input("酒店名稱", value=st.session_state.temp_meta["酒店名稱"])
+            h_checkin = st.text_input("入住日期 (YYYY-MM-DD)", value=st.session_state.temp_meta["入住日期"])
+        with col2:
+            st.write("") # 對齊用
+            f_arr = st.text_input("抵達機場", value=st.session_state.temp_meta["抵達機場"])
+            f_arr_t = st.text_input("抵達時間 (HH:MM)", value=st.session_state.temp_meta["抵達時間"])
+            h_addr = st.text_input("酒店地址", value=st.session_state.temp_meta["酒店地址"])
+            h_checkout = st.text_input("退房日期 (YYYY-MM-DD)", value=st.session_state.temp_meta["退房日期"])
+
+        # 儲存按鈕 (不放在 st.form 裡以避免解析問題)
+        if st.button("💾 確認儲存並更新 Index", use_container_width=True, type="primary"):
+            with st.spinner("儲存中..."):
+                # 1. 找到 Index 表對應列
+                cell = index_ws.find(selected_trip)
+                row = cell.row
+                
+                # 2. 依照順序準備更新值
+                # 欄位: 航班號(5), 出發機場(6), 出發時間(7), 抵達機場(8), 抵達時間(9), 酒店(10), 地址(11), 入住(12), 退房(13)
+                update_vals = [f_no, f_dep, f_dep_t, f_arr, f_arr_t, h_name, h_addr, h_checkin, h_checkout]
+                
+                # 執行更新
+                range_label = f"E{row}:M{row}" # 假設從第五欄(E)到第十三欄(M)
+                index_ws.update(range_label, [update_vals])
+                
+                # 3. 如果是用戶透過 AI 解析的，詢問是否要順便加入 Day 1 行程 (選配邏輯)
+                # 這裡為了單純，我們先專注於更新 Index
+
+            if f_no and f_dep_t:
+                day1_date = basic_data[1] # 開始日期
+                # 檢查是否已存在該航班行程，避免重複寫入
+                existing_plans = current_sheet.get_all_values()
+                if not any(f_no in row for row in existing_plans):
+                    current_sheet.append_row([
+                        day1_date, 
+                        f_dep_t, 
+                        f_arr_t if f_arr_t else "23:59", 
+                        f"✈️ 航班: {f_no} ({f_dep} 🛫 {f_arr})", 
+                        "", 
+                        "AI 自動生成：請提前抵達機場"
+                    ])    
+
+                del st.session_state.temp_meta # 儲存完畢清除暫存
+                st.success("Index 更新成功！")
+                st.rerun()
+
+
     st.title(f"📍 {selected_trip}")
-    c1, c2 = st.columns(2)
-    with c1:
-        # 航班號在索引 4
-        flight_no = basic_data[4] if basic_data[4] else "未填寫"
-        st.info(f"✈️ **航班資訊**：{flight_no}")
-    with c2:
-        # 酒店名稱在索引 9
-        hotel_name = basic_data[9] if basic_data[9] else "未填寫"
-        st.success(f"🏨 **今日住宿**：{hotel_name}")
+    with st.container(border=True):
+        col_info, col_edit = st.columns([4, 1])
+        with col_info:
+            st.write(f"✈️ **航班**：{basic_data[4] if basic_data[4] else '點擊右側編輯'}")
+            st.write(f"🏨 **飯店**：{basic_data[9] if basic_data[9] else '點擊右側編輯'}")
+        with col_edit:
+            if st.button("⚙️ 編輯", key="edit_meta_main"):
+                edit_meta_data()
 
     st.info(f"📅 期間：{basic_data[1]} ~ {basic_data[2]} | 🌍 國家/天數：{basic_data[3]}/ {duration}天")
     
+    @st.dialog("💰 新增花費")
+    def add_expense_dialog(trip_name, country):
+        expense_ws_name = f"{trip_name}_Expenses"
+        
+        # 檢查或建立記帳表
+        try:
+            exp_ws = spreadsheet.worksheet(expense_ws_name)
+        except:
+            exp_ws = spreadsheet.add_worksheet(title=expense_ws_name, rows="100", cols="5")
+            exp_ws.append_row(["款項敘述", "類別", "花費", "幣值", "日期"])
+
+        with st.form("expense_form"):
+            uploaded_file = st.file_uploader("📸 上傳收據/發票 (AI 自動填入)", type=['png', 'jpg', 'jpeg'])
+            # 這裡可加入 AI 解析邏輯...
+            
+            desc = st.text_input("款項敘述")
+            cat = st.selectbox("類別", ["交通", "住宿", "飲食", "購物", "其他"])
+            amount = st.number_input("輸入花費", min_value=0.0)
+            submitted = st.form_submit_button("確認新增")
+            
+            # 根據國家預設幣值
+            default_curr = CURRENCY_MAP.get(country, "TWD")
+            curr = st.selectbox("選擇幣值", ["TWD", "JPY", "USD", "KRW", "THB", "EUR"], index=["TWD", "JPY", "USD", "KRW", "THB", "EUR"].index(default_curr))
+            
+            if submitted:
+                if desc and amount > 0:
+                    # 執行寫入 Google Sheets 的動作
+                    exp_ws.append_row([desc, "類別", amount, "幣值", "日期"])
+                    st.success("✅ 已記錄！")
+                    st.rerun()
+                else:
+                    st.error("請填寫完整資訊")
+    def show_expense_summary(trip_name):
+        expense_ws_name = f"{trip_name}_Expenses"
+        try:
+            exp_ws = spreadsheet.worksheet(expense_ws_name)
+            data = exp_ws.get_all_values()
+            if len(data) > 1:
+                df_exp = pd.DataFrame(data[1:], columns=data[0])
+                df_exp["花費"] = pd.to_numeric(df_exp["花費"], errors='coerce')
+                
+                total_cost = df_exp["花費"].sum()
+                
+                st.metric("💰 旅程總花費", f"{total_cost:,.0f}")
+                
+                # 顯示各類別佔比
+                cat_sum = df_exp.groupby("類別")["花費"].sum()
+                cols = st.columns(len(cat_sum))
+                for idx, (cat, val) in enumerate(cat_sum.items()):
+                    percent = (val / total_cost) * 100
+                    cols[idx].caption(f"**{cat}**\n{percent:.0f}%")
+            else:
+                st.caption("尚無消費記錄")
+        except:
+            st.caption("尚未建立記帳本")
+
+    # 5. 在主頁面放置按鈕
+    # 記帳與新增景點按鈕並排
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("💵 新增花費", use_container_width=True, type="primary"):
+            add_expense_dialog(selected_trip, country_name)
+    with c2:
+        if st.button("➕ 新增景點", use_container_width=True):
+            add_item_dialog()
+
+    # 顯示花費統計
+    show_expense_summary(selected_trip)
+
     st.subheader("📅 行程詳情")
     all_values = current_sheet.get_all_values()
     if len(all_values) > 1:
@@ -295,13 +481,13 @@ if selected_trip:
                 t_end = st.text_input("結束時間 (HH:MM)", placeholder="10:30")
             s = st.text_input("景點/餐廳名稱")
             n = st.text_area("備註")
+            map_url = st.text_input("地圖連結 ", placeholder="https://maps.google.com/...") 
+            if not map_url:
+                import urllib.parse
+                map_url = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(f'{country_name} {s}')}"
             
             if st.form_submit_button("確認新增"):
-                if s and t_start:
-                    import urllib.parse
-                    map_url = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(f'{country_name} {s}')}"
-                    
-                    # 寫入 Google Sheets (對應新標題順序)
+                if d and t_start and s:
                     current_sheet.append_row([d, t_start, t_end, s, map_url, n])
                     st.success("已加入行程！")
                     st.rerun()
@@ -310,6 +496,7 @@ if selected_trip:
     
     if st.button("➕ 添加新景點", use_container_width=True):
       add_item_dialog()
+
 
 with st.sidebar:
     st.divider()
@@ -338,71 +525,8 @@ with st.sidebar:
             return None
     
         
-    @st.dialog("⚙️ 編輯旅程基本資訊")
-    def edit_meta_data():
-        # 初始化 session_state 用於暫存編輯中的資料
-        if "temp_meta" not in st.session_state:
-            # 預設抓取目前 Index 表的值 (對應 basic_data 索引)
-            st.session_state.temp_meta = {
-                "航班號": basic_data[4], "出發機場": basic_data[5], "出發時間": basic_data[6],
-                "抵達機場": basic_data[7], "抵達時間": basic_data[8],
-                "酒店名稱": basic_data[9], "酒店地址": basic_data[10],
-                "入住日期": basic_data[11], "退房日期": basic_data[12]
-            }
 
-        # 第一區：AI 輔助輸入
-        st.subheader("🤖 AI 自動填表")
-        raw_input = st.text_area("貼上航班或酒店確認信內容...", height=100)
-        if st.button("🪄 讓 AI 解析並填入下方"):
-            if raw_input:
-                with st.spinner("AI 正在解析中..."):
-                    parsed_data = get_travel_meta_json(raw_input, basic_data[1])
-                    if parsed_data:
-                        # 將解析結果覆蓋到暫存區
-                        st.session_state.temp_meta.update(parsed_data)
-                        st.success("解析成功！請檢查下方表格。")
-            else:
-                st.warning("請先輸入文字")
 
-        st.divider()
 
-        # 第二區：用戶手動校對與編輯
-        st.subheader("📝 核對詳細資訊")
-        col1, col2 = st.columns(2)
-        with col1:
-            f_no = st.text_input("航班號", value=st.session_state.temp_meta["航班號"])
-            f_dep = st.text_input("出發機場", value=st.session_state.temp_meta["出發機場"])
-            f_dep_t = st.text_input("出發時間 (HH:MM)", value=st.session_state.temp_meta["出發時間"])
-            h_name = st.text_input("酒店名稱", value=st.session_state.temp_meta["酒店名稱"])
-            h_checkin = st.text_input("入住日期 (YYYY-MM-DD)", value=st.session_state.temp_meta["入住日期"])
-        with col2:
-            st.write("") # 對齊用
-            f_arr = st.text_input("抵達機場", value=st.session_state.temp_meta["抵達機場"])
-            f_arr_t = st.text_input("抵達時間 (HH:MM)", value=st.session_state.temp_meta["抵達時間"])
-            h_addr = st.text_input("酒店地址", value=st.session_state.temp_meta["酒店地址"])
-            h_checkout = st.text_input("退房日期 (YYYY-MM-DD)", value=st.session_state.temp_meta["退房日期"])
 
-        # 儲存按鈕 (不放在 st.form 裡以避免解析問題)
-        if st.button("💾 確認儲存並更新 Index", use_container_width=True, type="primary"):
-            with st.spinner("儲存中..."):
-                # 1. 找到 Index 表對應列
-                cell = index_ws.find(selected_trip)
-                row = cell.row
-                
-                # 2. 依照順序準備更新值
-                # 欄位: 航班號(5), 出發機場(6), 出發時間(7), 抵達機場(8), 抵達時間(9), 酒店(10), 地址(11), 入住(12), 退房(13)
-                update_vals = [f_no, f_dep, f_dep_t, f_arr, f_arr_t, h_name, h_addr, h_checkin, h_checkout]
-                
-                # 執行更新
-                range_label = f"E{row}:M{row}" # 假設從第五欄(E)到第十三欄(M)
-                index_ws.update(range_label, [update_vals])
-                
-                # 3. 如果是用戶透過 AI 解析的，詢問是否要順便加入 Day 1 行程 (選配邏輯)
-                # 這裡為了單純，我們先專注於更新 Index
-                
-                del st.session_state.temp_meta # 儲存完畢清除暫存
-                st.success("Index 更新成功！")
-                st.rerun()
 
-    if st.button("⚙️ 編輯航班/酒店資訊"):
-        edit_meta_data()
