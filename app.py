@@ -101,47 +101,104 @@ st.set_page_config(page_title="Jay Travel Planner", layout="wide")
 # --- 插入自定義 CSS ---
 st.markdown("""
 <style>
-    /* 整體背景與字體 */
-    .stApp {
-        background-color: #F8F9FA;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    }
+/* ===== 全域基礎設定 ===== */
+:root {
+    --bg: #F7F7F5;
+    --panel: #FFFFFF;
+    --border: rgba(55, 53, 47, 0.15);
+    --text-main: #191919; /* 強制深黑色，確保可見 */
+    --text-muted: #666666;
+    --accent: #2383E2;
+    --radius: 12px;
+}
 
-    /* 卡片樣式：優雅圓角與陰影 */
-    div[data-testid="stVerticalBlock"] > div[style*="border"] {
-        background-color: white;
-        border: none !important;
-        border-radius: 20px !important;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-        padding: 25px !important;
-        margin-bottom: 20px;
-    }
+/* 強制所有基本文字顯示顏色 */
+.stApp {
+    background: var(--bg);
+    color: var(--text-main) !important;
+}
 
-    /* 按鈕樣式：參考截圖的灰藍色調 */
-    .stButton>button {
-        border-radius: 12px;
-        border: none;
-        background-color: #9BA9B9; /* 截圖中的灰藍色 */
-        color: white;
-        font-weight: 600;
-        transition: all 0.3s ease;
-    }
-    .stButton>button:hover {
-        background-color: #7E8E9F;
-        transform: translateY(-1px);
-    }
+/* 針對 Streamlit 標題與文字的強制修正 */
+h1, h2, h3, h4, h5, p, span, label {
+    color: var(--text-main) !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
 
-    /* 頂部 Tab 樣式簡約化 */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
-        background-color: transparent;
+/* ===== 主內容區優化 ===== */
+section.main > div {
+    max-width: 900px;
+    padding: 1rem 0.8rem !important;
+}
+
+/* ===== 解決手機版 Tabs 顏色問題 ===== */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+}
+.stTabs [data-baseweb="tab"] {
+    height: 40px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 0 16px;
+    color: var(--text-main) !important;
+}
+/* 選中的標籤變深色，文字變白色 */
+.stTabs [aria-selected="true"] {
+    background: var(--text-main) !important;
+    border-color: var(--text-main) !important;
+}
+.stTabs [aria-selected="true"] p {
+    color: #FFFFFF !important;
+}
+
+/* ===== 行程卡片 (Itinerary Cards) ===== */
+div[data-testid="stVerticalBlock"] > div[style*="border"] {
+    background: var(--panel) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    padding: 18px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.03) !important;
+    margin-bottom: 12px !important;
+}
+
+/* ===== 按鈕優化 (大面積觸控) ===== */
+.stButton > button {
+    width: 100%;
+    height: 3.5rem !important;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text-main) !important;
+    font-weight: 600;
+    font-size: 1rem;
+    margin-top: 5px;
+}
+
+/* 黑色主要按鈕 (如：記帳、確認) */
+.stButton > button[kind="primary"] {
+    background: var(--text-main) !important;
+    color: #FFFFFF !important;
+    border: none;
+}
+
+/* ===== 側邊欄文字修正 ===== */
+section[data-testid="stSidebar"] .stMarkdown, 
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] p {
+    color: var(--text-main) !important;
+}
+
+/* ===== 手機版微調 ===== */
+@media (max-width: 640px) {
+    h1 { font-size: 1.8rem !important; margin-bottom: 0.5rem !important; }
+    /* 讓兩欄排版在極小螢幕不要縮得太擠 */
+    div[data-testid="column"] {
+        min-width: 45% !important;
     }
-    .stTabs [data-baseweb="tab"] {
-        height: 40px;
-        border-radius: 10px;
-        background-color: #EEE;
-        border: none;
-    }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -214,98 +271,122 @@ if selected_trip:
     duration = (end_date - start_date).days + 1
     date_range = [(start_date + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(duration)]
     
-    @st.dialog("⚙️ 編輯旅程基本資訊")
-    def edit_meta_data():
-        # 初始化 session_state 用於暫存編輯中的資料
-        if "temp_meta" not in st.session_state:
-            # 預設抓取目前 Index 表的值 (對應 basic_data 索引)
-            st.session_state.temp_meta = {
-                "航班號": basic_data[4], "出發機場": basic_data[5], "出發時間": basic_data[6],
-                "抵達機場": basic_data[7], "抵達時間": basic_data[8],
-                "酒店名稱": basic_data[9], "酒店地址": basic_data[10],
-                "入住日期": basic_data[11], "退房日期": basic_data[12]
-            }
+    st.info(f"📅 期間：{basic_data[1]} ~ {basic_data[2]} | 🌍 國家/天數：{basic_data[3]}/ {duration}天")
 
-        # 第一區：AI 輔助輸入
-        st.subheader("🤖 AI 自動填表")
-        raw_input = st.text_area("貼上航班或酒店確認信內容...", height=100)
-        if st.button("🪄 讓 AI 解析並填入下方"):
-            if raw_input:
-                with st.spinner("AI 正在解析中..."):
-                    parsed_data = get_travel_meta_json(raw_input, basic_data[1])
-                    if parsed_data:
-                        # 將解析結果覆蓋到暫存區
-                        st.session_state.temp_meta.update(parsed_data)
-                        st.success("解析成功！請檢查下方表格。")
-            else:
-                st.warning("請先輸入文字")
+    @st.dialog("✈️ 編輯航班資訊")
+    def edit_flights(trip_sheet):
+        with st.form("flight_form", clear_on_submit=True):
+            st.subheader("新增一段航班")
+            f_no = st.text_input("航班號 (例如: BR198)")
+            col1, col2 = st.columns(2)
+            with col1:
+                f_dep = st.text_input("出發地/機場")
+                f_dep_t = st.text_input("出發時間 (HH:MM)")
+            with col2:
+                f_arr = st.text_input("目的地/機場")
+                f_arr_t = st.text_input("抵達時間 (HH:MM)")
+            f_date = st.selectbox("航班日期", options=date_range)
+            
+            if st.form_submit_button("確認新增航班"):
+                if f_no and f_dep_t:
+                    # 直接寫入該旅程的行程表
+                    trip_sheet.append_row([
+                        f_date, f_dep_t, f_arr_t, 
+                        f"✈️ 航班: {f_no} ({f_dep} 🛫 {f_arr})", 
+                        "", "航班資訊"
+                    ])
+                    st.success("✅ 航班已加入行程！")
+                    st.rerun() # 跳回主畫面
+
+    @st.dialog("🏨 編輯飯店資訊")
+    def edit_hotels(trip_sheet):
+        with st.form("hotel_form", clear_on_submit=True):
+            st.subheader("新增飯店入住紀錄")
+            h_name = st.text_input("飯店名稱")
+            h_addr = st.text_input("飯店地址")
+            col1, col2 = st.columns(2)
+            with col1:
+                h_in = st.date_input("入住日期")
+            with col2:
+                h_out = st.date_input("退房日期")
+            
+            if st.form_submit_button("確認儲存飯店"):
+                # 將飯店資訊存入行程
+                # 入住日
+                trip_sheet.append_row([str(h_in), "15:00", "23:59", f"🏨 入住: {h_name}", "", h_addr])
+                # 退房日
+                trip_sheet.append_row([str(h_out), "00:00", "11:00", f"🔑 退房: {h_name}", "", ""])
+                st.success("✅ 飯店資訊已儲存！")
+                st.rerun()
 
         st.divider()
 
-        # 第二區：用戶手動校對與編輯
-        st.subheader("📝 核對詳細資訊")
-        col1, col2 = st.columns(2)
-        with col1:
-            f_no = st.text_input("航班號", value=st.session_state.temp_meta["航班號"])
-            f_dep = st.text_input("出發機場", value=st.session_state.temp_meta["出發機場"])
-            f_dep_t = st.text_input("出發時間 (HH:MM)", value=st.session_state.temp_meta["出發時間"])
-            h_name = st.text_input("酒店名稱", value=st.session_state.temp_meta["酒店名稱"])
-            h_checkin = st.text_input("入住日期 (YYYY-MM-DD)", value=st.session_state.temp_meta["入住日期"])
-        with col2:
-            st.write("") # 對齊用
-            f_arr = st.text_input("抵達機場", value=st.session_state.temp_meta["抵達機場"])
-            f_arr_t = st.text_input("抵達時間 (HH:MM)", value=st.session_state.temp_meta["抵達時間"])
-            h_addr = st.text_input("酒店地址", value=st.session_state.temp_meta["酒店地址"])
-            h_checkout = st.text_input("退房日期 (YYYY-MM-DD)", value=st.session_state.temp_meta["退房日期"])
+        # # 第二區：用戶手動校對與編輯
+        # st.subheader("📝 核對詳細資訊")
+        # col1, col2 = st.columns(2)
+        # with col1:
+        #     f_no = st.text_input("航班號", value=st.session_state.temp_meta["航班號"])
+        #     f_dep = st.text_input("出發機場", value=st.session_state.temp_meta["出發機場"])
+        #     f_dep_t = st.text_input("出發時間 (HH:MM)", value=st.session_state.temp_meta["出發時間"])
+        #     h_name = st.text_input("酒店名稱", value=st.session_state.temp_meta["酒店名稱"])
+        #     h_checkin = st.text_input("入住日期 (YYYY-MM-DD)", value=st.session_state.temp_meta["入住日期"])
+        # with col2:
+        #     st.write("") # 對齊用
+        #     f_arr = st.text_input("抵達機場", value=st.session_state.temp_meta["抵達機場"])
+        #     f_arr_t = st.text_input("抵達時間 (HH:MM)", value=st.session_state.temp_meta["抵達時間"])
+        #     h_addr = st.text_input("酒店地址", value=st.session_state.temp_meta["酒店地址"])
+        #     h_checkout = st.text_input("退房日期 (YYYY-MM-DD)", value=st.session_state.temp_meta["退房日期"])
 
-        # 儲存按鈕 (不放在 st.form 裡以避免解析問題)
-        if st.button("💾 確認儲存並更新 Index", use_container_width=True, type="primary"):
-            with st.spinner("儲存中..."):
-                # 1. 找到 Index 表對應列
-                cell = index_ws.find(selected_trip)
-                row = cell.row
+        # # 儲存按鈕 (不放在 st.form 裡以避免解析問題)
+        # if st.button("💾 確認儲存並更新 Index", use_container_width=True, type="primary"):
+        #     with st.spinner("儲存中..."):
+        #         # 1. 找到 Index 表對應列
+        #         cell = index_ws.find(selected_trip)
+        #         row = cell.row
                 
-                # 2. 依照順序準備更新值
-                # 欄位: 航班號(5), 出發機場(6), 出發時間(7), 抵達機場(8), 抵達時間(9), 酒店(10), 地址(11), 入住(12), 退房(13)
-                update_vals = [f_no, f_dep, f_dep_t, f_arr, f_arr_t, h_name, h_addr, h_checkin, h_checkout]
+        #         # 2. 依照順序準備更新值
+        #         # 欄位: 航班號(5), 出發機場(6), 出發時間(7), 抵達機場(8), 抵達時間(9), 酒店(10), 地址(11), 入住(12), 退房(13)
+        #         update_vals = [f_no, f_dep, f_dep_t, f_arr, f_arr_t, h_name, h_addr, h_checkin, h_checkout]
                 
-                # 執行更新
-                range_label = f"E{row}:M{row}" # 假設從第五欄(E)到第十三欄(M)
-                index_ws.update(range_label, [update_vals])
+        #         # 執行更新
+        #         range_label = f"E{row}:M{row}" # 假設從第五欄(E)到第十三欄(M)
+        #         index_ws.update(range_label, [update_vals])
                 
-                # 3. 如果是用戶透過 AI 解析的，詢問是否要順便加入 Day 1 行程 (選配邏輯)
-                # 這裡為了單純，我們先專注於更新 Index
+        #         # 3. 如果是用戶透過 AI 解析的，詢問是否要順便加入 Day 1 行程 (選配邏輯)
+        #         # 這裡為了單純，我們先專注於更新 Index
 
-            if f_no and f_dep_t:
-                day1_date = basic_data[1] # 開始日期
-                # 檢查是否已存在該航班行程，避免重複寫入
-                existing_plans = current_sheet.get_all_values()
-                if not any(f_no in row for row in existing_plans):
-                    current_sheet.append_row([
-                        day1_date, 
-                        f_dep_t, 
-                        f_arr_t if f_arr_t else "23:59", 
-                        f"✈️ 航班: {f_no} ({f_dep} 🛫 {f_arr})", 
-                        "", 
-                        "AI 自動生成：請提前抵達機場"
-                    ])    
+        #     if f_no and f_dep_t:
+        #         day1_date = basic_data[1] # 開始日期
+        #         # 檢查是否已存在該航班行程，避免重複寫入
+        #         existing_plans = current_sheet.get_all_values()
+        #         if not any(f_no in row for row in existing_plans):
+        #             current_sheet.append_row([
+        #                 day1_date, 
+        #                 f_dep_t, 
+        #                 f_arr_t if f_arr_t else "23:59", 
+        #                 f"✈️ 航班: {f_no} ({f_dep} 🛫 {f_arr})", 
+        #                 "", 
+        #                 "AI 自動生成：請提前抵達機場"
+        #             ])    
 
-                del st.session_state.temp_meta # 儲存完畢清除暫存
-                st.success("Index 更新成功！")
-                st.rerun()
+        #         del st.session_state.temp_meta # 儲存完畢清除暫存
+        #         st.success("Index 更新成功！")
+        #         st.rerun()
 
 
     st.title(f"📍 {selected_trip}")
-    with st.container(border=True):
-        col_info, col_edit = st.columns([4, 1])
-        with col_info:
-            st.write(f"✈️ **航班**：{basic_data[4] if basic_data[4] else '點擊右側編輯'}")
-            st.write(f"🏨 **飯店**：{basic_data[9] if basic_data[9] else '點擊右側編輯'}")
-        with col_edit:
-            if st.button("⚙️ 編輯", key="edit_meta_main"):
-                edit_meta_data()
+    # 5. 在主頁面放置按鈕
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        if st.button("✈️ 加航班", use_container_width=True):
+            edit_flights(current_sheet)
+    with c2:
+        if st.button("🏨 加飯店", use_container_width=True):
+            edit_hotels(current_sheet)
+    with c3:
+        if st.button("💵 記帳", use_container_width=True, type="primary"):
+            add_expense_dialog(selected_trip, country_name)
 
-    st.info(f"📅 期間：{basic_data[1]} ~ {basic_data[2]} | 🌍 國家/天數：{basic_data[3]}/ {duration}天")
     
     @st.dialog("💰 新增花費")
     def add_expense_dialog(trip_name, country):
@@ -339,6 +420,7 @@ if selected_trip:
                     st.rerun()
                 else:
                     st.error("請填寫完整資訊")
+
     def show_expense_summary(trip_name):
         expense_ws_name = f"{trip_name}_Expenses"
         try:
@@ -363,15 +445,7 @@ if selected_trip:
         except:
             st.caption("尚未建立記帳本")
 
-    # 5. 在主頁面放置按鈕
-    # 記帳與新增景點按鈕並排
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("💵 新增花費", use_container_width=True, type="primary"):
-            add_expense_dialog(selected_trip, country_name)
-    with c2:
-        if st.button("➕ 新增景點", use_container_width=True):
-            add_item_dialog()
+    
 
     # 顯示花費統計
     show_expense_summary(selected_trip)
@@ -388,7 +462,8 @@ if selected_trip:
     for i, date_str in enumerate(date_range):
         with tabs[i]:
             day_items = df[df["日期"] == date_str].copy()
-            
+            st.caption(f"📍 本日住宿：{get_today_hotel(date_str, items_list)}")
+       
             if not day_items.empty:
                 # 確保時間格式正確並排序
                 day_items['temp_time'] = pd.to_datetime(day_items['開始時間'], format='%H:%M', errors='coerce')
