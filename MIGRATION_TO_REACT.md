@@ -51,3 +51,23 @@ Vite proxies `/api` to `http://localhost:8000`.
 
 - React gives smoother client-side interactions and state management.
 - You can progressively add richer UI (timeline, drag/drop, expense charts) without changing your existing sheet layout.
+
+## Download all files to your local machine
+
+If you want one archive containing the React migration files plus all other repository files, run:
+
+```bash
+bash scripts/export_project_zip.sh
+```
+
+This creates:
+
+- `dist/local-travel-planner-export.zip`
+
+Then download/copy that zip to your local machine.
+
+Optional custom output path and zip name:
+
+```bash
+bash scripts/export_project_zip.sh /tmp my-travel-planner.zip
+```
