@@ -462,7 +462,7 @@ if selected_trip:
     for i, date_str in enumerate(date_range):
         with tabs[i]:
             day_items = df[df["日期"] == date_str].copy()
-            st.caption(f"📍 本日住宿：{get_today_hotel(date_str, items_list)}")
+            # st.caption(f"📍 本日住宿：{get_today_hotel(date_str, items_list)}")
        
             if not day_items.empty:
                 # 確保時間格式正確並排序
