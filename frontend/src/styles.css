@@ -1,0 +1,10 @@
+body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #f6f7fb; }
+.layout { display: grid; grid-template-columns: 320px 1fr; min-height: 100vh; }
+aside, section { padding: 20px; }
+aside { background: #fff; border-right: 1px solid #e2e2e2; }
+form { display: grid; gap: 8px; margin: 12px 0 24px; }
+input, select, button { padding: 10px; border-radius: 8px; border: 1px solid #cfd4dc; }
+button { background: #111827; color: #fff; border: none; cursor: pointer; }
+table { width: 100%; border-collapse: collapse; background: #fff; }
+th, td { border: 1px solid #ececec; padding: 10px; text-align: left; }
+.error { color: #b00020; }
